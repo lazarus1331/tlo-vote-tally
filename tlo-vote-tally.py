@@ -5,7 +5,7 @@ import re
 import requests
 from time import sleep
 
-def lxmlize(url, raise_exceptions=False):
+def lxmlize(url, session=requests.Session()):
     """Parses document into an LXML object and makes links absolute.
     Args:
         url (str): URL of the document to parse.
@@ -13,18 +13,15 @@ def lxmlize(url, raise_exceptions=False):
         Element: Document node representing the page.
     """
     try:
-        response = requests.get(url)
+        response = session.get(url)
     except requests.exceptions.SSLError:
         print('`lxmlize()` failed due to SSL error, trying '
                      'an unverified `requests.get()`')
-        response = requests.get(url, verify=False)
+        response = session.get(url, verify=False)
     except requests.exceptions.ConnectionError:
         print('Request limit exceeded. Waiting 10 seconds.')
         sleep(10)
-        response = requests.get(url)
-    if raise_exceptions:
-        response.raise_for_status()
-
+        response = session.get(url)
     page = lxml.html.fromstring(response.text)
     page.make_links_absolute(url)
     response.close()
@@ -58,10 +55,11 @@ def scrape_chamber(chamber, bill_list):
     #bill_list = bill_list[-300:0]
     bill_votes = []
     print(f'Scraping bill urls for chamber {chamber}')
+    s = requests.Session()
     for url in bill_list:
         #print(url)
         bill = re.search(r'[SH]B\d+$', url).group()
-        page = lxmlize(url)
+        page = lxmlize(url, s)
         house_vote_records = page.xpath('//table/tr[@id="houvote"]')
         senate_vote_records = page.xpath('//table/tr[@id="senvote"]')
         num_house_votes = len(house_vote_records)
@@ -83,40 +81,44 @@ def scrape_chamber(chamber, bill_list):
             'lower': h_data,
             'upper': s_data
         }}
-        bill_votes.append(data_row)
+        #bill_votes.append(data_row)
         yield data_row
     #return bill_votes
 
 def write_data(data, file='results.csv', full=False):
-    my_file = open(f'{file}', 'a')
-    writer = csv.writer(my_file)
-    if full:
-        headers = ['bill_id', 'chamber', 'date', 'journal']
-        writer.writerow(headers)
-        for row in data:
-            for k, v in row.items():
-                bill_id = k
-                for record in v['lower']:
-                    full_row = [bill_id, 'house', record['date'],
-                        record['source']]
-                    writer.writerow(full_row)
-                for record in v['upper']:
-                    full_row = [bill_id, 'senate', record['date'],
-                        record['source']]
-                    writer.writerow(full_row)
-    else:
-        headers = ['bill_id', 'lower_votes', 'upper_votes']
-        writer.writerow(headers)
-        for row in data:
-            for k, v in row.items():
-                short_row = [k, v['lower_votes'], v['upper_votes']]
-                writer.writerow(short_row)
-    my_file.close()
+    with open(file,'a') as myfile:
+        writer = csv.writer(myfile, delimiter=',', quotechar='"')
+        if full:
+            headers = ['bill_id', 'chamber', 'date', 'journal']
+            writer.writerow(headers)
+            for row in data:
+                for k, v in row.items():
+                    bill_id = k
+                    #print(bill_id)
+                    for record in v['lower']:
+                        full_row = [bill_id, 'house', record['date'],
+                            record['source']]
+                        writer.writerow(full_row)
+                        myfile.flush()
+                    for record in v['upper']:
+                        full_row = [bill_id, 'senate', record['date'],
+                            record['source']]
+                        writer.writerow(full_row)
+                        myfile.flush()
+        else:
+            headers = ['bill_id', 'lower_votes', 'upper_votes']
+            writer.writerow(headers)
+            for row in data:
+                for k, v in row.items():
+                    #print(k)
+                    short_row = [k, v['lower_votes'], v['upper_votes']]
+                    writer.writerow(short_row)
+                    myfile.flush()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c","--chamber", help="Select between house|senate",
-                        choices=['house', 'senate'], default='senate')
+                        choices=['house', 'senate'])
     parser.add_argument("-f","--file", help="Output to this file",
                         type=str, default='results.csv')
     parser.add_argument("-o","--output", help="Output per vote data",
@@ -125,9 +127,17 @@ def main():
                         type=str, default='85R')
     args = parser.parse_args()
     print('Starting...')
-    bill_urls = get_chamber_bills(args.chamber, args.session)
-    write_data(scrape_chamber(args.chamber, bill_urls), args.file,
-        args.output)
+    if args.chamber:
+        bill_urls = get_chamber_bills(args.chamber, args.session)
+        write_data(scrape_chamber(args.chamber, bill_urls), args.file,
+            args.output)
+    else:
+        bill_urls = get_chamber_bills('house', args.session)
+        write_data(scrape_chamber('house', bill_urls), args.file,
+            args.output)
+        bill_urls = get_chamber_bills('senate', args.session)
+        write_data(scrape_chamber('senate', bill_urls), args.file,
+            args.output)
     print('Finished.')
 
 # ----------------------------------------------
