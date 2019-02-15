@@ -114,19 +114,20 @@ def write_data(data, file='results.csv', full=False):
     my_file.close()
 
 def main():
-    print('Starting...')
     parser = argparse.ArgumentParser()
     parser.add_argument("-c","--chamber", help="Select between house|senate",
-                        type=str)
+                        choices=['house', 'senate'], default='senate')
     parser.add_argument("-f","--file", help="Output to this file",
-                        type=str)
+                        type=str, default='results.csv')
     parser.add_argument("-o","--output", help="Output per vote data",
-                        action="store_true")
+                        action="store_true", default=False)
     parser.add_argument("-s","--session", help="Enter the Session ID, e.g. '85R'",
-                        type=str)
-    bill_urls = get_chamber_bills(parser.chamber, parser.session)
-    write_data(scrape_chamber(parser.chamber, bill_urls), parser.file,
-        parser.output)
+                        type=str, default='85R')
+    args = parser.parse_args()
+    print('Starting...')
+    bill_urls = get_chamber_bills(args.chamber, args.session)
+    write_data(scrape_chamber(args.chamber, bill_urls), args.file,
+        args.output)
     print('Finished.')
 
 # ----------------------------------------------
