@@ -13,15 +13,14 @@ def lxmlize(url, session=requests.Session()):
         Element: Document node representing the page.
     """
     try:
-        response = session.get(url)
+        response = session.get(url, timeout=10)
     except requests.exceptions.SSLError:
         print('`lxmlize()` failed due to SSL error, trying '
                      'an unverified `requests.get()`')
-        response = session.get(url, verify=False)
+        response = session.get(url, verify=False, timeout=10)
     except requests.exceptions.ConnectionError:
         print('Request limit exceeded. Waiting 10 seconds.')
-        sleep(10)
-        response = session.get(url)
+        response = session.get(url, timeout=10)
     page = lxml.html.fromstring(response.text)
     page.make_links_absolute(url)
     response.close()
@@ -121,6 +120,8 @@ def main():
                         choices=['house', 'senate'])
     parser.add_argument("-f","--file", help="Output to this file",
                         type=str, default='results.csv')
+    parser.add_argument("-m","--max", help="Maximum number of bills to process",
+                        type=int, default=None)
     parser.add_argument("-o","--output", help="Output per vote data",
                         action="store_true", default=False)
     parser.add_argument("-s","--session", help="Enter the Session ID, e.g. '85R'",
@@ -129,14 +130,24 @@ def main():
     print('Starting...')
     if args.chamber:
         bill_urls = get_chamber_bills(args.chamber, args.session)
+        if args.max > 0:
+            bill_urls = get_chamber_bills(args.chamber, args.session)[0:args.max]
         write_data(scrape_chamber(args.chamber, bill_urls), args.file,
             args.output)
     else:
-        bill_urls = get_chamber_bills('house', args.session)
-        write_data(scrape_chamber('house', bill_urls), args.file,
+        if args.max:
+            last = args.max//2
+            hbill_urls = get_chamber_bills('house', args.session)[0:last]
+        else:
+            hbill_urls = get_chamber_bills('house', args.session)
+        write_data(scrape_chamber('house', hbill_urls), args.file,
             args.output)
-        bill_urls = get_chamber_bills('senate', args.session)
-        write_data(scrape_chamber('senate', bill_urls), args.file,
+        if args.max:
+            last = args.max//2
+            sbill_urls = get_chamber_bills('senate', args.session)[0:last]
+        else:
+            sbill_urls = get_chamber_bills('senate', args.session)
+        write_data(scrape_chamber('senate', sbill_urls), args.file,
             args.output)
     print('Finished.')
 
